@@ -336,6 +336,9 @@ def install(name: str, session_id: str = "") -> dict:
                 shutil.rmtree(data() / "versions" / name / str(v), ignore_errors=True)
     stage = _tmp()
     _copy(d, stage)
+    if tree_sha(stage) != rec["sha"]:  # staged-copy readback: the bytes about to go live are the bytes that passed the check
+        shutil.rmtree(stage.parent, ignore_errors=True)
+        return _err("staged copy differs from the checked draft; nothing installed")
     _write_json(stage / MARKER, {"version": version, "sha": rec["sha"], "installed_utc": datetime.now(timezone.utc).isoformat()})
     _swap(stage, target)
     r = rec["registrations"]

@@ -216,6 +216,21 @@ def test_stale_check_sha_refused_until_rechecked(env):
     assert not forge.install("never-checked")["ok"]
 
 
+def test_staged_copy_readback_refuses_short_copy(env, monkeypatch):
+    green("short-one")
+    real = forge._copy
+
+    def lossy(src, dst):  # a copy that silently drops a file
+        real(src, dst)
+        next(p for p in sorted(Path(dst).rglob("*")) if p.is_file()).unlink()
+
+    monkeypatch.setattr(forge, "_copy", lossy)
+    r = forge.install("short-one")
+    assert not r["ok"] and "staged copy" in r["error"] and not live(env, "short-one").exists()
+    monkeypatch.setattr(forge, "_copy", real)
+    assert forge.install("short-one")["ok"]  # same green check still installs once the copy is faithful
+
+
 def test_failed_check_never_installs(env):
     forge.new("broken", ["tool"], "x")
     (forge.data() / "drafts" / "broken" / "__init__.py").write_text("def register(ctx:\n")
