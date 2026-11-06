@@ -1,0 +1,2 @@
+provides_tools:
+  - {{ident}}_hello
