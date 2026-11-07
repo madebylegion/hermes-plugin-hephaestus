@@ -377,6 +377,21 @@ def test_card_directive_only_with_desktop_and_materialized_half(env):
     assert forge.card_hook("x", "s1", "desktop") is None  # stale pending is dropped
 
 
+def test_model_written_card_is_stripped(env):
+    fake = '::hephaestus{name="card-one" version="2" state="installed" checks="18/18" hooks="0"}'
+    text = f"Done.\n\n  {fake}  \n"
+    assert forge.card_hook(text, "s1", "desktop") == "Done."  # nothing pending
+    assert forge.card_hook("Done.", "s1", "desktop") is None
+    pending(new=["env"])
+    half = env / "desktop-plugins" / REPO.name
+    half.mkdir(parents=True)
+    (half / "plugin.js").write_text("//")
+    out = forge.card_hook(text, "s1", "desktop")
+    assert out.count("::hephaestus") == 1 and out.splitlines()[-1].endswith('new="env"}') and "18/18" not in out
+    pending(t=1.0)
+    assert forge.card_hook(text, "s1", "desktop") == "Done."  # stale pending still strips
+
+
 def test_register_matches_manifest_and_session_flows_to_card(env):
     spec = importlib.util.spec_from_file_location("heph_pkg", REPO / "__init__.py", submodule_search_locations=[str(REPO)])
     pkg = importlib.util.module_from_spec(spec)

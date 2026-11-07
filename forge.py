@@ -513,13 +513,19 @@ def _desktop_half_ready(plugin: str) -> bool:
 
 def card_hook(response_text: str = "", session_id: str = "", platform: str = "", **_kw):
     """transform_llm_output: append the install card when forge_install ran in this session."""
+    src = response_text
+    if isinstance(src, str):  # only this hook may write a card: drop any the model wrote
+        response_text = re.sub(r"(?m)^[ \t]*::hephaestus\{.*\}[ \t]*$\n?", "", src)
+        if response_text != src:
+            response_text = response_text.rstrip()
+    changed = response_text != src
     f = data() / "pending" / f"{session_id or 'default'}.json"
     p = _read_json(f)
     if not p:
-        return None
+        return response_text if changed else None
     f.unlink(missing_ok=True)
     if time.time() - p.get("t", 0) > 3600 or not isinstance(response_text, str):
-        return None
+        return response_text if changed else None
     name, perms = _clean(p["name"]), ",".join(_clean(x) for x in p["perms"]) or "none"
     new = ",".join(_clean(x) for x in p.get("new", []))  # permissions this version adds over the installed one
     if platform == "desktop" and _desktop_half_ready(Path(__file__).parent.name):
