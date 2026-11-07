@@ -82,7 +82,7 @@ function Card({ attrs, copy }) {
       setPhase('Restoring the previous version…')
       const r = await withTimeout(host.request('command.dispatch', { name: 'forge', arg: `rollback ${name}`, session_id: sid }))
       const out = String(r?.output ?? '')
-      if (r?.type !== 'plugin' || /^Error:/.test(out)) throw new Error(out || 'no answer from /forge')
+      if (!['plugin', 'exec'].includes(r?.type) || /^Error:/.test(out)) throw new Error(out || 'no answer from /forge')
       if (was) { await flip(true); off = false }
       setNote(out.slice(0, 200))
     } catch (e) {
