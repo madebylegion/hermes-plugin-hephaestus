@@ -59,7 +59,8 @@ def _err(msg, **extra) -> dict:
 # ---------------------------------------------------------------- CLI
 def cli(*args) -> tuple[int, str, str]:
     """Run `hermes <args>` with an explicit HERMES_HOME. Returns (rc, stdout, stderr)."""
-    exe = shutil.which("hermes")
+    sib = Path(sys.executable).parent / "hermes"
+    exe = str(sib) if sib.is_file() and os.access(sib, os.X_OK) else shutil.which("hermes")
     if not exe:
         return 127, "", "hermes CLI not on PATH; add the folder that holds `hermes` to PATH and retry"
     cmd = [exe]
@@ -156,7 +157,7 @@ def forged_names() -> list[str]:
 
 # ---------------------------------------------------------------- scaffold
 def new(name: str, kinds, purpose: str = "") -> dict:
-    if not isinstance(name, str) or not NAME_RE.match(name):
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         return _err("name must match ^[a-z][a-z0-9-]{1,39}$")
     kinds = list(dict.fromkeys(kinds or ["tool"]))
     bad = [k for k in kinds if k not in KINDS]
@@ -275,7 +276,7 @@ def scan(d: Path) -> dict:
 
 # ---------------------------------------------------------------- check / install
 def _draft(name: str):
-    if not isinstance(name, str) or not NAME_RE.match(name):
+    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         return None, _err("name must match ^[a-z][a-z0-9-]{1,39}$")
     d = data() / "drafts" / name
     return (d, None) if d.is_dir() else (None, _err(f"no draft {name!r}; call forge_new first"))
@@ -367,7 +368,7 @@ def list_forged() -> dict:
 
 def _marked(name: str):
     t = home() / "plugins" / str(name)
-    return (t, None) if NAME_RE.match(str(name)) and (t / MARKER).is_file() else (None, _err(f"{name!r} is not a plugin forged by Hephaestus"))
+    return (t, None) if NAME_RE.fullmatch(str(name)) and (t / MARKER).is_file() else (None, _err(f"{name!r} is not a plugin forged by Hephaestus"))
 
 
 def _cli_result(rc, er, ok_msg) -> dict:
@@ -437,11 +438,31 @@ def slash(raw_args: str = "", **_kw) -> str:
 
 # ---------------------------------------------------------------- guard (rule 2b) and card hook
 # The patterns are assembled from pieces: this file must not itself look like the thing it guards against.
-_ENABLE = re.compile(r"\bplugins?\s+(?:enable|toggle)\b")
+_ENABLE = re.compile(r"\bplugins?[\s\"',\[\]]+(?:enable|toggle)\b")  # also list argv: ["hermes","plugins","enable",...]
 _CFG_FILE = "config" + r"\.ya?ml"
-_CFG = re.compile(_CFG_FILE + "|" + r"\bconfig\s+set\b" + r"|\byq\b")
-_WRITE = re.compile("|".join([r"(?<![\d&])>(?!&)", r"\btee\b", r"\bsed\s+-\w*i", r"\b(?:cp|mv|ln|rsync|perl|python3?|yq)\b", r"write", r"\bconfig\s+set\b"]))
+_CFG_SET = re.compile(r"\bconfig\s+set\b")
+# a shell verb that writes: redirect, tee, in-place edit, copy/move; _CODE_W is the Python equivalent
+_VERB = re.compile(r"(?<![\d&])>>?|\btee\b|\b(?:sed|yq|perl)\s+(?:-\w*i|--in-?place)|\b(?:cp|mv|ln|rsync|install)\b")
+_CODE_W = re.compile(r"\bshutil\b|\.write\w*\(|\w*dump\(|\.(?:replace|rename|symlink_to)\(|\bopen\s*\([^)]*(?:,\s*|mode\s*=\s*)['\"][wa]")
 PROTECT_MSG = "Hephaestus protects plugin settings and forged plugin files. Use forge_new, forge_check and forge_install, and ask the user to click Enable."
+
+
+def _writes_to(text: str, tgt: str) -> bool:
+    """True when the path regex `tgt` is the TARGET of a write in `text`: redirect, tee, sed/yq -i, last arg of cp/mv,
+    a `cd` into it followed by any write verb, or Python code that writes and names it. Reads (grep, cat, cp out) pass."""
+    t = rf"[^\s|;&<>]*{tgt}[^\s|;&<>]*"
+    end = r"(?:\s+(?:\d*>&?\S*|#.*))*\s*(?:$|[|;&])"
+    pats = [rf"(?<![\d&])>>?\s*{t}", rf"\btee\b[^|;&\n]*?{t}", rf"\b(?:sed|yq|perl)\s+(?:-\w*i|--in-?place)[^|;&\n]*?{t}",
+            rf"\b(?:cp|mv|ln|rsync|install)\b[^|;&\n]*\s{t}{end}"]
+    return (any(re.search(q, text, re.M) for q in pats) or bool(re.search(tgt, text) and _CODE_W.search(text))
+            or bool(re.search(rf"\bcd\s+[^\s|;&]*{tgt}", text) and _VERB.search(text)))
+
+
+def _is_hermes_config(q: Path) -> bool:
+    """True for the active Hermes config (and the profile-root one), not any file that happens to share the name."""
+    h = home()
+    roots = [h] + ([h.parent.parent] if h.parent.name == "profiles" else [])
+    return any(os.path.realpath(q) == os.path.realpath(r / "config.yaml") for r in roots)
 
 
 def _protected(path, text: str) -> bool:
@@ -450,7 +471,7 @@ def _protected(path, text: str) -> bool:
     if not isinstance(path, str) or not path:
         return False
     q = Path(os.path.normpath(Path(os.path.expanduser(path)) if os.path.isabs(os.path.expanduser(path)) else Path.cwd() / os.path.expanduser(path)))
-    if re.fullmatch(_CFG_FILE, q.name):
+    if _is_hermes_config(q):
         return bool(names) and bool(re.search(r"\benabled\b|\bplugins\b", text) or any(n in text for n in names))
     for h in [home()] + ([home().parent.parent] if home().parent.name == "profiles" else []):
         parts = q.parts[len(h.parts):] if q.parts[:len(h.parts)] == h.parts else ()
@@ -462,20 +483,20 @@ def _protected(path, text: str) -> bool:
 def guard(tool_name: str = "", args=None, **_kw):
     """pre_tool_call: veto agent calls that would enable a forged plugin or edit its files. Regex + marker: it stops a
     confused agent, not a hostile one."""
-    if tool_name not in ("terminal", "execute_code", "write_file", "patch") or not isinstance(args, dict):
+    if tool_name not in ("terminal", "execute_code", "write_file", "patch", "process_manage") or not isinstance(args, dict):
         return None
     names = forged_names()
     if tool_name in ("write_file", "patch"):
         text = "\n".join(str(v) for v in args.values() if isinstance(v, str))
         paths = [args.get("path")] + re.findall(r"\*\*\* (?:Update|Add|Delete) File: (.+)", text)
         return {"action": "block", "message": PROTECT_MSG} if any(_protected(p, text) for p in paths) else None
-    text = str(args.get("command") or args.get("code") or "")
+    text = str(args.get("command") or args.get("code") or args.get("data") or "")
     hit = [n for n in names if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", text)]
-    if hit and (_ENABLE.search(text) or (_CFG.search(text) and re.search(r"enabled|plugins", text))):
+    cfg_write = _writes_to(text, _CFG_FILE) or bool(_CFG_SET.search(text) or re.search(r"\byq\s+(?:-\w*i|--in-?place)", text))
+    if hit and (_ENABLE.search(text) or cfg_write):
         return {"action": "block", "message": BLOCK_MSG}
-    if names and _WRITE.search(text) and (
-            (_CFG.search(text) and re.search(r"\benabled\b|\bplugins\b", text)) or "desktop-plugins" in text
-            or any(re.search(rf"plugins[/\\]{re.escape(n)}(?![\w-])", text) for n in names)):
+    if names and ((cfg_write and re.search(r"\benabled\b|\bplugins\b", text)) or _writes_to(text, "desktop-plugins")
+                  or any(_writes_to(text, rf"plugins[/\\]{re.escape(n)}(?![\w-])") for n in names)):
         return {"action": "block", "message": PROTECT_MSG}
     return None
 
@@ -507,6 +528,6 @@ def card_hook(response_text: str = "", session_id: str = "", platform: str = "",
                 f'tools="{_clean(p["tools"])}" commands="{_clean(p["commands"])}" hooks="{_clean(p["hooks"])}"'
                 + (f' new="{new}"' if new else "") + "}")
     else:
-        card = (f"**Forged `{name}` v{_clean(p['version'])}**: {p['passed']}/{p['total']} checks passed, {p['warn']} warning(s), "
+        card = (f"**Forged `{name}` v{_clean(p['version'])}**: {_clean(p['passed'])}/{_clean(p['total'])} checks passed, {_clean(p['warn'])} warning(s), "
                 f"permissions: {perms}." + (f" v{_clean(p['version'])} adds {new}." if new else "") + f"\nInstalled but **disabled**. Only you can turn it on, by typing this line:\n/forge enable {name}")
     return f"{response_text}\n\n{card}"

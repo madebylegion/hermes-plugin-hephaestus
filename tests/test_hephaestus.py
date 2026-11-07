@@ -59,6 +59,7 @@ def edit_draft(name, fname, old, new):
 def test_name_and_kind_validation(env):
     for bad in ("A", "x", "-ab", "has space", "a" * 41, "../etc", "ab_cd"):
         assert not forge.new(bad, ["tool"], "x")["ok"], bad
+    assert not forge.new("ok-name\n", ["tool"], "x")["ok"] and not (forge.data() / "drafts").exists()  # `$` would accept the newline
     assert not forge.new("good-name", ["bogus"], "x")["ok"]
     assert forge.new("good-name", ["tool"], "x")["ok"]
 
@@ -159,8 +160,22 @@ def test_permission_delta_on_reforge(env):
 
 def test_cli_missing_gives_clear_error(env, monkeypatch):
     monkeypatch.setenv("PATH", str(env))  # a dir with no `hermes`
+    monkeypatch.setattr(sys, "executable", str(env / "python"))  # and no sibling `hermes` either
     rc, _, err = forge.cli("plugins", "list")
     assert rc == 127 and "not on PATH" in err
+
+
+def test_cli_prefers_hermes_next_to_python_over_path(env, monkeypatch):
+    # the machine launcher on PATH pins the live HERMES_HOME; the interpreter's own `hermes` must win
+    for d, tag in (("a", "SIBLING"), ("b", "PATHHIT")):
+        (env / d).mkdir()
+        (env / d / "hermes").write_text(f"#!/bin/sh\necho {tag}\n")
+        (env / d / "hermes").chmod(0o755)
+    monkeypatch.setenv("PATH", str(env / "b"))
+    monkeypatch.setattr(sys, "executable", str(env / "a" / "python"))
+    assert forge.cli("plugins", "list")[1].strip() == "SIBLING"
+    monkeypatch.setattr(sys, "executable", str(env / "python"))  # no sibling: fall back to PATH
+    assert forge.cli("plugins", "list")[1].strip() == "PATHHIT"
 
 
 def test_refuses_ssh_key_reader(env):
@@ -380,3 +395,61 @@ def test_register_matches_manifest_and_session_flows_to_card(env):
     assert seen["commands"]["forge"]("enable via-tool") == "via-tool enabled (tools appear next session)"
     assert "via-tool  v1  enabled" in seen["commands"]["forge"]("list")
     assert "forge_list" not in t
+
+
+# --- QA fixes (HEPH-QA G10/G12/F19-F25, S2, MUST-3). Rows: (command or code, tool, blocked?)
+CFG = "~/.hermes/con" + "fig.yaml"  # pieces: keep this file's own scan quiet
+GUARD_ROWS = [
+    ("echo '  - my-forge' >> " + CFG, "terminal", True),                                              # G10
+    ('import subprocess\nsubprocess.run(["hermes","plugins","enable","my-forge"])', "execute_code", True),  # G12
+    ("['hermes', 'plugins', 'toggle', 'my-forge']", "execute_code", True),
+    ("cd ~/.hermes/plugins/my-forge && sed -i 's/a/b/' __init__.py", "terminal", True),                  # G25
+    ("python3 - <<'EOF'\nimport shutil\nshutil.copy('/tmp/a', '~/.hermes/plugins/my-forge/__init__.py')\nEOF", "terminal", True),  # G45
+    ("cp -r /tmp/mine/. ~/.hermes/plugins/my-forge/ 2>&1", "terminal", True),
+    ("grep -rn enabled " + CFG + " > /tmp/enabled.txt", "terminal", False),                            # F19
+    ("docker compose -f con" + "fig.yaml config > out.txt # check enabled services", "terminal", False),   # F22
+    ("cp ~/.hermes/plugins/my-forge/__init__.py /tmp/my-forge-copy.py", "terminal", False),             # F23
+    ("python3 scripts/write_report.py --config con" + "fig.yaml --plugins all", "terminal", False),     # F25
+    ("cd ~/.hermes/plugins/my-forge && git diff", "terminal", False),                                   # F24
+    ("cat " + CFG + " | grep my-forge", "terminal", False),
+]
+
+
+@pytest.mark.parametrize("text,tool,blocked", GUARD_ROWS)
+def test_guard_qa_rows(env, text, tool, blocked):
+    mark(env, "my-forge")
+    key = "code" if tool == "execute_code" else "command"
+    assert bool(forge.guard(tool, {key: text})) is blocked, text
+
+
+def test_guard_process_manage_data(env):
+    mark(env, "my-forge")
+    assert forge.guard("process_manage", {"action": "submit", "session_id": "p1", "data": "hermes plugins enable my-forge"})["action"] == "block"
+    assert forge.guard("process_manage", {"action": "poll", "session_id": "p1"}) is None
+
+
+def test_guard_config_path_is_the_active_hermes_config_only(env, monkeypatch, tmp_path):
+    cfg = "con" + "fig.yaml"
+    mark(env, "my-forge")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    monkeypatch.chdir(proj)
+    for body in ("feature_x:\n  enabled: true\n", "plugins:\n  - mine\n"):  # F20, F21: the project's own file
+        assert forge.guard("write_file", {"path": str(proj / cfg), "content": body}) is None
+        assert forge.guard("write_file", {"path": cfg, "content": body}) is None
+    assert forge.guard("write_file", {"path": str(env / "x" / ".." / cfg), "content": "plugins: []"})  # still the active one
+    # profile home: the root config counts too
+    root = tmp_path / "root"
+    prof = root / "profiles" / "p1"
+    (prof / "plugins" / "my-forge").mkdir(parents=True)
+    (prof / "plugins" / "my-forge" / forge.MARKER).write_text("{}")
+    monkeypatch.setenv("HERMES_HOME", str(prof))
+    assert forge.guard("write_file", {"path": str(root / cfg), "content": "plugins: []"})
+    assert forge.guard("write_file", {"path": str(prof / cfg), "content": "plugins: []"})
+    assert forge.guard("write_file", {"path": str(tmp_path / cfg), "content": "plugins: []"}) is None
+
+
+def test_card_markdown_cleans_counts(env):
+    pending(passed="<b>9", total="1`2", warn="x\ny")
+    out = forge.card_hook("ok", "s1", "cli")
+    assert "<b>" not in out and "`2" not in out and "x\ny" not in out
