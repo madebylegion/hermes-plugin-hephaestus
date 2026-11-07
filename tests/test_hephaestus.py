@@ -200,6 +200,21 @@ def test_refuses_private_hermes_import(env):
     assert not forge.install("peeker")["ok"] and not live(env, "peeker").exists()
 
 
+@pytest.mark.parametrize("line,ok", [
+    ("from agent.runtime_cwd" + " import resolve_agent_cwd\n", True),  # public, documented
+    ("from agent" + ".conversation_loop import x\n", False),  # private core
+])
+def test_import_gate_allows_only_resolve_agent_cwd(env, line, ok):
+    green("cwdpeek", ["tool"])
+    p = forge.data() / "drafts" / "cwdpeek" / "tool_part.py"
+    p.write_text(line + p.read_text())
+    c = forge.check("cwdpeek")
+    assert c["ok"] is ok, c["failed"]
+    if not ok:
+        assert "public imports only" in c["failed"]
+    assert "resolve_agent_cwd" in forge.CONTRACT and "never os.getcwd" in forge.CONTRACT
+
+
 def test_refuses_symlink_in_draft(env):
     green("linky")
     os.symlink("/etc/hostname", forge.data() / "drafts" / "linky" / "leak.txt")

@@ -27,12 +27,12 @@ TEMPLATES = Path(__file__).parent / "templates"
 BLOCK_MSG = "Only the user can enable a forged plugin. Ask them to click Enable."
 CONTRACT = """Authoring contract (Hermes plugin, Python 3 stdlib only):
 - Edit only files inside draft_dir. __init__.py must define register(ctx).
-- ctx.register_tool(name=, toolset=, schema={name, description, parameters: JSON-schema}, handler=fn). Handler: fn(args: dict, **kw) -> JSON string. List every tool under provides_tools in plugin.yaml.
+- ctx.register_tool(name=, toolset=, schema={name, description, parameters: JSON-schema}, handler=fn). Handler: fn(args: dict, **kw) -> JSON string. List tools under provides_tools in plugin.yaml.
 - ctx.register_command("name", handler=fn(raw_args: str) -> str, description="...") adds /name.
-- ctx.register_hook("post_tool_call", fn(**kw)); list hooks under provides_hooks in plugin.yaml. Hooks that change agent behaviour (pre_tool_call, transform_llm_output, pre_llm_call) show on the permission label.
-- Imports: stdlib and hermes_constants only. Never import hermes_cli.*, tools.*, agent.*, gateway.*.
+- ctx.register_hook("post_tool_call", fn(**kw)); list hooks under provides_hooks in plugin.yaml. Behaviour-changing hooks (pre_tool_call, transform_llm_output, pre_llm_call) show on the permission label.
+- Imports: stdlib and hermes_constants only. Never import hermes_cli.*, tools.*, agent.*, gateway.*, except `from agent.runtime_cwd import resolve_agent_cwd` = the user's folder (git, ls, cwd=); never os.getcwd(). Guard with try/except ImportError.
 - No python_dependencies. No network or subprocess unless the user asked for it. Write files only under hermes_constants.get_hermes_home()/'plugin-data'/'<name>'. Never read secrets, ~/.ssh, .env files or API keys from os.environ.
-- Keep description honest: the user sees it next to the permission label.
+- Keep description honest.
 - Desktop kind: desktop/plugin.js is plain ESM, its id equals the plugin name, imports only @hermes/plugin-sdk, react, react/jsx-runtime.
 Loop: edit files -> forge_check(name) -> fix each failed check -> green -> forge_install(name). Install leaves the plugin DISABLED. You cannot enable it: tell the user to click Enable or type /forge enable <name>."""
 
