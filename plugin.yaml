@@ -2,6 +2,7 @@ name: hephaestus
 version: 0.1.0
 description: "Forge Hermes plugins from chat: the agent drafts, the official validator and doctor check, it installs disabled, and only you enable it. One more step rolls it back."
 author: "madebylegion"
+requires_hermes: ">=0.22.5"
 provides_tools:
   - forge_new
   - forge_check
