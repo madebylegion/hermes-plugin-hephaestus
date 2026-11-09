@@ -1,6 +1,6 @@
 """Hephaestus tests. Real `hermes` CLI, always inside a throwaway HERMES_HOME under $TMPDIR.
 
-Run: python -m pytest -q tests
+Run: python -m pytest -q tests  (use the Python that runs Hermes)
 Known-bad sources are built at runtime so this repo's own security scan stays `safe`.
 """
 import importlib.util
