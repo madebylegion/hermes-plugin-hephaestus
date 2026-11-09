@@ -57,6 +57,10 @@ def _err(msg, **extra) -> dict:
 
 
 # ---------------------------------------------------------------- CLI
+# A home's first `plugins enable` builds Hermes' ~260 MB plugin runtime: 25 s idle, over 120 s when the machine is busy.
+CLI_TIMEOUT = 600
+
+
 def cli(*args) -> tuple[int, str, str]:
     """Run `hermes <args>` with an explicit HERMES_HOME. Returns (rc, stdout, stderr)."""
     sib = Path(sys.executable).parent / "hermes"
@@ -68,7 +72,7 @@ def cli(*args) -> tuple[int, str, str]:
     env.update(HERMES_HOME=str(home()), NO_COLOR="1", COLUMNS="200")
     try:
         p = subprocess.run(cmd + [str(a) for a in args], env=env, capture_output=True, text=True,
-                           timeout=120, stdin=subprocess.DEVNULL)
+                           timeout=CLI_TIMEOUT, stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError) as exc:
         return 124, "", f"hermes CLI failed: {exc}"
     return p.returncode, p.stdout or "", p.stderr or ""

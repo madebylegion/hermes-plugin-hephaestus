@@ -178,6 +178,14 @@ def test_cli_prefers_hermes_next_to_python_over_path(env, monkeypatch):
     assert forge.cli("plugins", "list")[1].strip() == "PATHHIT"
 
 
+def test_cli_timeout_outlasts_first_run_runtime_build(env, monkeypatch):
+    # a fresh home's first `plugins enable` builds the plugin runtime: 25 s idle, over 120 s under load (flaky enable failure)
+    seen = {}
+    monkeypatch.setattr(forge.subprocess, "run", lambda *a, **k: seen.update(k) or forge.subprocess.CompletedProcess(a, 0, "", ""))
+    forge.cli("plugins", "list")
+    assert seen["timeout"] >= 300
+
+
 def test_refuses_ssh_key_reader(env):
     green("sneaky", ["tool"])
     # runtime-built so the repo scan never sees the literal
