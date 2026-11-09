@@ -38,7 +38,7 @@ A skill can teach an agent to write a plugin. It cannot enforce anything. Hephae
 
 ## Safety model
 
-- **Installed disabled.** Nothing a forged plugin does runs until you enable it. Only a human enables, and enable always passes `--no-allow-tool-override`.
+- **Installed disabled.** No forged tool, hook or command is live until you enable it. Only a human enables, and enable always passes `--no-allow-tool-override`.
 - **Hard gate.** `forge_check` fails on any failed validator or doctor check, on symlinks, and on private Hermes imports (the official validator only warns on those). A `dangerous` security scan also stops the install.
 - **Rollback.** One previous version is kept. Rollback restores it and checks the hash.
 - **Marker file.** Hephaestus only touches plugins with `.forged-by-hephaestus`.
@@ -53,6 +53,7 @@ The guard **stops a confused agent, not a hostile one.** It is a pattern check.
 - It misses a plugin the agent writes by hand outside Hephaestus.
 - A dynamic import such as `importlib.import_module('hermes_' + …)` gets past the private-import check.
 - The permission label comes from a heuristic code scan. It is for consent, not a sandbox, and can miss code that hides what it does.
+- Checking a draft runs a little of its code. The official validator imports the draft once in a throwaway child process (scratch Hermes home, same user and environment) to see what it registers. Top-level and `register()` code runs then; the agent's own terminal can already do as much.
 - Tested on Linux only.
 
 ## Surfaces
