@@ -11,9 +11,10 @@ You say "forge me a plugin that does X." Your agent writes the code from a start
 ```bash
 hermes plugins install https://github.com/madebylegion/hermes-plugin-hephaestus
 hermes plugins enable hephaestus
+hermes plugins doctor hephaestus
 ```
 
-Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. Tested on Hermes v0.22.5 (local build v0.22.5+86); needs v0.22.5 or newer.
+Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. Tested on v0.22.5 and v0.23.0; needs v0.22.5 or newer.
 
 **First run, once:** open Capabilities → Plugins and switch on Hephaestus's own Desktop part (press Rescan if it is not listed). Until then you get a plain text card.
 
@@ -22,7 +23,7 @@ Use the full repository URL. A bare local path is read as a GitHub name and fail
 1. `Forge me a /standup command that summarises my git commits since yesterday.`
 2. `Forge a Desktop widget that shows the current time in three time zones.`
 
-Then press **Enable** on the card. A new slash command works in the same chat; new **tools** arrive in the next session. The first enable can take up to a minute; the card says so. If you type `/forge enable <name>` in a chat instead, it goes through the CLI and applies from the next session.
+Then press **Enable** on the card. A new slash command works in the same chat; new **tools** arrive in the next session. A new Hermes home needs 40–60 s once, over install and first enable. If you type `/forge enable <name>` in a chat instead, it goes through the CLI and applies from the next session.
 
 ## The card
 
@@ -66,7 +67,7 @@ Tools `forge_new`, `forge_check`, `forge_install`; command `/forge list | enable
 python -m pytest -q tests
 ```
 
-Takes 4–5 minutes; the tests call the real `hermes` CLI in a temporary `HERMES_HOME`.
+Needs `pytest`; takes 4–5 minutes. The tests call the real `hermes` CLI in a temporary `HERMES_HOME`.
 
 ## Disclosure
 
