@@ -2,6 +2,14 @@
 
 Ask Hermes for **any** plugin your own agent can write: tools, slash commands, Desktop UI. The **official** Hermes validator and doctor are the hard gate. **You hold the switch:** the plugin installs off, the agent is blocked from enabling it, a consent card shows what it can touch and what a new version adds, and one click restores the old version byte for byte.
 
+## What it looks like
+
+![Card: installed off, 18/18 checks, Enable and Roll back](https://raw.githubusercontent.com/madebylegion/hermes-plugin-hephaestus/main/docs/screenshots/consent-card.png)
+
+![Agent refused when it tried to enable the plugin](https://raw.githubusercontent.com/madebylegion/hermes-plugin-hephaestus/main/docs/screenshots/blocked.png)
+
+![Upgrade card: v2 adds environment and internet access](https://raw.githubusercontent.com/madebylegion/hermes-plugin-hephaestus/main/docs/screenshots/upgrade-adds.png)
+
 ## How it works
 
 You say "forge me a plugin that does X." Your agent writes the code from a starting template (`tool`, `command` or `desktop`). Hephaestus runs `hermes plugins validate --json` and `hermes plugins doctor --ci`, adds its own checks, builds a permission label, installs a green draft **disabled** after saving the previous version, and shows a card.
