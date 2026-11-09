@@ -9,7 +9,7 @@ You say "forge me a plugin that does X." Your agent writes the code from a start
 ## Install
 
 ```bash
-hermes plugins install <REPO_URL>
+hermes plugins install https://github.com/madebylegion/hermes-plugin-hephaestus
 hermes plugins enable hephaestus
 ```
 
