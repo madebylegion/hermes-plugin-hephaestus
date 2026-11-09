@@ -1,10 +1,10 @@
 # Hephaestus
 
-Ask Hermes for **any** plugin your own agent can write: tools, slash commands, Desktop UI. It is not a set of fill-in templates. The **official** Hermes validator and doctor are the hard gate. **You hold the switch:** the plugin installs off, the agent is blocked from enabling it, a consent card shows what it can touch and what a new version adds, and one click restores the old version byte for byte.
+Ask Hermes for **any** plugin your own agent can write: tools, slash commands, Desktop UI. The **official** Hermes validator and doctor are the hard gate. **You hold the switch:** the plugin installs off, the agent is blocked from enabling it, a consent card shows what it can touch and what a new version adds, and one click restores the old version byte for byte.
 
 ## How it works
 
-You say "forge me a plugin that does X." Your agent writes the code from a starting template (`tool`, `command` or `desktop`). Hephaestus runs `hermes plugins validate --json` and `hermes plugins doctor --ci`, adds its own checks, builds a permission label, installs a green draft **disabled** after saving the previous version, and shows a card. Only you can enable.
+You say "forge me a plugin that does X." Your agent writes the code from a starting template (`tool`, `command` or `desktop`). Hephaestus runs `hermes plugins validate --json` and `hermes plugins doctor --ci`, adds its own checks, builds a permission label, installs a green draft **disabled** after saving the previous version, and shows a card.
 
 ## Install
 
@@ -13,16 +13,16 @@ hermes plugins install <REPO_URL>
 hermes plugins enable hephaestus
 ```
 
-Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. On a fresh machine, install to green checks took about 50 s in independent QA. Tested on Hermes v0.22.5 (local build v0.22.5+86); needs v0.22.5 or newer.
+Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. Tested on Hermes v0.22.5 (local build v0.22.5+86); needs v0.22.5 or newer.
 
-**First run, once:** open Capabilities → Plugins and switch on Hephaestus's own Desktop part (press Rescan if it is not listed). Until then you get a plain text card instead of the Desktop card.
+**First run, once:** open Capabilities → Plugins and switch on Hephaestus's own Desktop part (press Rescan if it is not listed). Until then you get a plain text card.
 
 ## Quick start
 
 1. `Forge me a /standup command that summarises my git commits since yesterday.`
 2. `Forge a Desktop widget that shows the current time in three time zones.`
 
-Then press **Enable** on the card. A new slash command works in the same chat; new **tools** arrive in the next session. The first enable can be slow. The card says "Enabling… (the first time can take up to a minute)" while it works. If you type `/forge enable <name>` in a chat instead, it goes through the CLI and applies from the next session.
+Then press **Enable** on the card. A new slash command works in the same chat; new **tools** arrive in the next session. The first enable can take up to a minute; the card says so. If you type `/forge enable <name>` in a chat instead, it goes through the CLI and applies from the next session.
 
 ## The card
 
@@ -34,7 +34,7 @@ Then press **Enable** on the card. A new slash command works in the same chat; n
 
 ## What only a plugin can do
 
-A skill can teach an agent to write a plugin. It cannot enforce anything. Hephaestus is code, so it can gate the install by hash (`forge_install` accepts only a draft whose current bytes passed), refuse on red checks, block agent calls with a `pre_tool_call` guard, show a consent card, and roll back byte for byte with a hash readback.
+A skill cannot enforce anything. Hephaestus is code, so it can gate the install by hash (`forge_install` accepts only a draft whose current bytes passed), refuse on red checks, block agent calls with a `pre_tool_call` guard, show a consent card, and roll back byte for byte.
 
 ## Safety model
 
@@ -66,7 +66,7 @@ Tools `forge_new`, `forge_check`, `forge_install`; command `/forge list | enable
 python -m pytest -q tests
 ```
 
-Takes about 4–5 minutes, because the tests call the real `hermes` CLI in a temporary `HERMES_HOME`.
+Takes 4–5 minutes; the tests call the real `hermes` CLI in a temporary `HERMES_HOME`.
 
 ## Disclosure
 
