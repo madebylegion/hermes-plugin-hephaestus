@@ -59,6 +59,11 @@ def _err(msg, **extra) -> dict:
 # ---------------------------------------------------------------- CLI
 # A home's first `plugins enable` builds Hermes' ~260 MB plugin runtime: 25 s idle, over 120 s when the machine is busy.
 CLI_TIMEOUT = 600
+# The only variables the `hermes` child gets. The CLI still loads HERMES_HOME/.env itself, which is why
+# forge_check also asks the user first (guard -> "approve").
+_ENV_KEEP = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TZ", "SYSTEMROOT",
+             "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR",
+             "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy")
 
 
 def cli(*args) -> tuple[int, str, str]:
@@ -68,7 +73,7 @@ def cli(*args) -> tuple[int, str, str]:
     if not exe:
         return 127, "", "hermes CLI not on PATH; add the folder that holds `hermes` to PATH and retry"
     cmd = [exe]
-    env = {k: v for k, v in os.environ.items() if k not in ("HERMES_YOLO_MODE", "HERMES_NONINTERACTIVE", "HERMES_INTERACTIVE")}
+    env = {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}  # explicit allowlist: no provider keys
     env.update(HERMES_HOME=str(home()), NO_COLOR="1", COLUMNS="200")
     try:
         p = subprocess.run(cmd + [str(a) for a in args], env=env, capture_output=True, text=True,
@@ -286,11 +291,42 @@ def _draft(name: str):
     return (d, None) if d.is_dir() else (None, _err(f"no draft {name!r}; call forge_new first"))
 
 
+# name -> tree_sha the user was asked about. Host memory, not a file: no agent tool can forge it.
+_ASKED: dict[str, str] = {}
+
+
+def ask_check(args) -> dict | None:
+    """pre_tool_call for forge_check: send it to Hermes' human-approval gate, keyed by the draft's tree_sha.
+    Denial, timeout, cron and no-human contexts fail closed in Hermes core; check() refuses any other bytes."""
+    d, e = _draft(args.get("name") if isinstance(args, dict) else None)
+    if e:
+        return None  # check() returns the error itself; no code runs
+    sha = tree_sha(d)
+    _ASKED[d.name] = sha
+    return {"action": "approve", "rule_key": f"hephaestus-check:{d.name}:{sha}",
+            "message": f"forge_check runs the Python in draft '{d.name}' (tree {sha[:12]}) on this machine: "
+                       "the validator imports it and calls register(). Approve only if you trust this draft."}
+
+
 def check(name: str) -> dict:
     d, e = _draft(name)
     if e:
         return e
-    sha = tree_sha(d)
+    asked = _ASKED.pop(name, None)  # one approval = one check
+    run = _tmp().parent / name  # check a private copy, so the bytes that run are the bytes that were approved
+    shutil.copytree(d, run, symlinks=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    try:
+        if any(p.is_symlink() for p in run.rglob("*")):  # a link target is outside the approved hash
+            return {"ok": False, "error": "draft has a symlink; nothing was run", "failed": ["no symlinks"], "checks": []}
+        sha = tree_sha(run)
+        if not asked or asked != sha:
+            return _err("this exact draft was not approved (no approval asked, or the draft changed); call forge_check again")
+        return _check(name, run, sha)
+    finally:
+        shutil.rmtree(run.parent, ignore_errors=True)
+
+
+def _check(name: str, d: Path, sha: str) -> dict:
     _, out, err = cli("plugins", "validate", "--json", d)
     v = _json_out(out, "{") or {"checks": [{"name": "validate", "ok": False, "detail": (err or out)[-300:]}], "warnings": []}
     checks = list(v.get("checks", []))
@@ -486,7 +522,9 @@ def _protected(path, text: str) -> bool:
 
 def guard(tool_name: str = "", args=None, **_kw):
     """pre_tool_call: veto agent calls that would enable a forged plugin or edit its files. Regex + marker: it stops a
-    confused agent, not a hostile one."""
+    confused agent, not a hostile one. forge_check goes to the human-approval gate instead."""
+    if tool_name == "forge_check":
+        return ask_check(args)
     if tool_name not in ("terminal", "execute_code", "write_file", "patch", "process_manage") or not isinstance(args, dict):
         return None
     names = forged_names()

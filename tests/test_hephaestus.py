@@ -37,10 +37,17 @@ def env():
         os.environ["HERMES_HOME"] = old
 
 
+def chk(name):
+    """What Hermes does for a model call: the guard asks (approve directive), the user says yes, then the tool runs."""
+    a = forge.guard("forge_check", {"name": name})
+    assert a is None or a["action"] == "approve", a
+    return forge.check(name)
+
+
 def green(name, kinds=("tool",), purpose="test plugin"):
     r = forge.new(name, list(kinds), purpose)
     assert r["ok"], r
-    c = forge.check(name)
+    c = chk(name)
     assert c["ok"], c["failed"] or c
     return r, c
 
@@ -113,7 +120,7 @@ def test_rollback_restores_bytes_file_only_and_works_disabled(env):
     h1 = forge.tree_sha(live(env, "roll-me"))
     assert forge.enable("roll-me")["ok"]
     edit_draft("roll-me", "tool_part.py", "Say hello.", "Say hello twice.")
-    assert forge.check("roll-me")["ok"]
+    assert chk("roll-me")["ok"]
     i2 = forge.install("roll-me")
     assert i2["ok"] and i2["version"] == 2 and i2["new_permissions"] == []
     assert forge.tree_sha(live(env, "roll-me")) != h1
@@ -131,7 +138,7 @@ def test_rollback_while_enabled_keeps_it_enabled_and_keeps_one_snapshot(env):
     forge.install("deep-roll")
     for i in (2, 3):  # v2 then v3: only the newest previous version (v2) is kept
         edit_draft("deep-roll", "tool_part.py", "Say hello" + ("." if i == 2 else " v2."), f"Say hello v{i}.")
-        assert forge.check("deep-roll")["ok"]
+        assert chk("deep-roll")["ok"]
         assert forge.install("deep-roll")["version"] == i
     assert forge._versions("deep-roll") == [2]
     assert forge.enable("deep-roll")["ok"]
@@ -145,7 +152,7 @@ def test_permission_delta_on_reforge(env):
     forge.install("grow")
     p = forge.data() / "drafts" / "grow" / "tool_part.py"
     p.write_text("import urllib.request\n" + p.read_text())
-    assert "network" in forge.check("grow")["permissions"]
+    assert "network" in chk("grow")["permissions"]
     i = forge.install("grow", "sess-d")
     assert i["new_permissions"] == ["network"]
     md = forge.card_hook("ok", "sess-d", "cli")
@@ -155,7 +162,7 @@ def test_permission_delta_on_reforge(env):
     forge.install("grow", "sess-e")  # same bytes: no new permission now
     assert 'new="' not in forge.card_hook("ok", "sess-e", "desktop")
     p.write_text(p.read_text() + "\n# v3\n")
-    assert forge.check("grow")["ok"] and forge.install("grow", "sess-f")["new_permissions"] == []
+    assert chk("grow")["ok"] and forge.install("grow", "sess-f")["new_permissions"] == []
 
 
 def test_cli_missing_gives_clear_error(env, monkeypatch):
@@ -192,7 +199,7 @@ def test_refuses_ssh_key_reader(env):
     bad = "import os\n_k = open(os.path.expanduser('~/" + ".ss" + "h/id_" + "rsa')).read()\n"
     p = forge.data() / "drafts" / "sneaky" / "tool_part.py"
     p.write_text(bad + p.read_text())
-    c = forge.check("sneaky")
+    c = chk("sneaky")
     assert not c["ok"] and "security scan" in c["failed"], c["failed"]
     r = forge.install("sneaky")
     assert not r["ok"] and not live(env, "sneaky").exists()
@@ -203,7 +210,7 @@ def test_refuses_private_hermes_import(env):
     bad = "from hermes_cli" + " import skills_hub\n"
     p = forge.data() / "drafts" / "peeker" / "tool_part.py"
     p.write_text(bad + p.read_text())
-    c = forge.check("peeker")
+    c = chk("peeker")
     assert not c["ok"] and "public imports only" in c["failed"], c["failed"]
     assert not forge.install("peeker")["ok"] and not live(env, "peeker").exists()
 
@@ -216,7 +223,7 @@ def test_import_gate_allows_only_resolve_agent_cwd(env, line, ok):
     green("cwdpeek", ["tool"])
     p = forge.data() / "drafts" / "cwdpeek" / "tool_part.py"
     p.write_text(line + p.read_text())
-    c = forge.check("cwdpeek")
+    c = chk("cwdpeek")
     assert c["ok"] is ok, c["failed"]
     if not ok:
         assert "public imports only" in c["failed"]
@@ -226,7 +233,7 @@ def test_import_gate_allows_only_resolve_agent_cwd(env, line, ok):
 def test_refuses_symlink_in_draft(env):
     green("linky")
     os.symlink("/etc/hostname", forge.data() / "drafts" / "linky" / "leak.txt")
-    c = forge.check("linky")
+    c = chk("linky")
     assert not c["ok"] and "no symlinks" in c["failed"]
 
 
@@ -249,7 +256,7 @@ def test_stale_check_sha_refused_until_rechecked(env):
     edit_draft("stale-one", "tool_part.py", "Say hello.", "Say hi.")
     r = forge.install("stale-one")
     assert not r["ok"] and "forge_check" in r["error"] and not live(env, "stale-one").exists()
-    assert forge.check("stale-one")["ok"]
+    assert chk("stale-one")["ok"]
     assert forge.install("stale-one")["ok"]
     assert not forge.install("never-checked")["ok"]
 
@@ -272,7 +279,7 @@ def test_staged_copy_readback_refuses_short_copy(env, monkeypatch):
 def test_failed_check_never_installs(env):
     forge.new("broken", ["tool"], "x")
     (forge.data() / "drafts" / "broken" / "__init__.py").write_text("def register(ctx:\n")
-    c = forge.check("broken")
+    c = chk("broken")
     assert not c["ok"] and c["failed"]
     assert not forge.install("broken")["ok"]
 
@@ -426,6 +433,8 @@ def test_register_matches_manifest_and_session_flows_to_card(env):
     assert sorted(seen["hooks"]) == ["pre_tool_call", "transform_llm_output"] and "forge" in seen["commands"]
     t = seen["tools"]
     assert json.loads(t["forge_new"]({"name": "via-tool", "kinds": ["tool"], "purpose": "p"}))["ok"]
+    assert not json.loads(t["forge_check"]({"name": "via-tool"}))["ok"]  # no approval asked: refused
+    assert seen["hooks"]["pre_tool_call"]("forge_check", {"name": "via-tool"})["action"] == "approve"  # the hook Hermes calls
     assert json.loads(t["forge_check"]({"name": "via-tool"}))["ok"]
     assert json.loads(t["forge_install"]({"name": "via-tool"}, session_id="sess-9"))["ok"]
     out = seen["hooks"]["transform_llm_output"](response_text="Done", session_id="sess-9", platform="cli")
@@ -491,3 +500,60 @@ def test_card_markdown_cleans_counts(env):
     pending(passed="<b>9", total="1`2", warn="x\ny")
     out = forge.card_hook("ok", "s1", "cli")
     assert "<b>" not in out and "`2" not in out and "x\ny" not in out
+
+
+def test_check_asks_approval_keyed_by_tree_sha(env):
+    forge.new("ask-me", ["tool"], "x")
+    a = forge.guard("forge_check", {"name": "ask-me"})
+    sha = forge.tree_sha(forge.data() / "drafts" / "ask-me")
+    assert a["action"] == "approve" and a["rule_key"] == f"hephaestus-check:ask-me:{sha}" and sha[:12] in a["message"]
+    assert forge.guard("forge_check", {"name": "../etc"}) is None and forge.guard("forge_check", None) is None
+
+
+def test_check_without_approval_runs_no_draft_code(env, tmp_path):
+    forge.new("no-ask", ["tool"], "x")
+    flag = tmp_path / "ran"
+    init = forge.data() / "drafts" / "no-ask" / "__init__.py"
+    init.write_text(f"open({str(flag)!r}, 'w').close()\n" + init.read_text())
+    r = forge.check("no-ask")  # direct call: no guard, so no approval
+    assert not r["ok"] and "not approved" in r["error"] and not flag.exists()
+
+
+def test_check_refuses_draft_changed_after_approval(env, tmp_path):
+    forge.new("swap", ["tool"], "x")
+    forge.guard("forge_check", {"name": "swap"})
+    init = forge.data() / "drafts" / "swap" / "__init__.py"
+    init.write_text("X = 1\n" + init.read_text())
+    r = forge.check("swap")
+    assert not r["ok"] and "not approved" in r["error"]
+    assert chk("swap")["ok"]  # asked again for the new bytes: fine
+    assert not forge.check("swap")["ok"]  # one approval = one check
+
+
+def test_cli_child_env_has_no_provider_keys(env, monkeypatch):
+    seen = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    monkeypatch.setenv("HERMES_YOLO_MODE", "1")
+    monkeypatch.setattr(forge.subprocess, "run", lambda cmd, env, **kw: seen.update(env) or forge.subprocess.CompletedProcess(cmd, 0, "", ""))
+    forge.cli("plugins", "list")
+    assert "OPENAI_API_KEY" not in seen and "HERMES_YOLO_MODE" not in seen
+    assert seen["HERMES_HOME"] == str(env) and seen["PATH"] == forge.os.environ["PATH"]
+
+
+def test_check_refuses_symlink_before_running_draft_code(env, tmp_path):
+    forge.new("link-run", ["tool"], "x")
+    flag = tmp_path / "ran"
+    init = forge.data() / "drafts" / "link-run" / "__init__.py"
+    init.write_text(f"open({str(flag)!r}, 'w').close()\n" + init.read_text())
+    (forge.data() / "drafts" / "link-run" / "extra.py").symlink_to(tmp_path / "elsewhere.py")
+    r = chk("link-run")
+    assert not r["ok"] and r["failed"] == ["no symlinks"] and not flag.exists()
+
+
+def test_approval_cannot_be_forged_through_a_file(env):
+    assert forge.guard("forge_check", {"name": "late-one"}) is None  # no draft yet: nothing asked
+    forge.new("late-one", ["tool"], "x")
+    (forge.data() / "asked").mkdir(parents=True, exist_ok=True)
+    sha = forge.tree_sha(forge.data() / "drafts" / "late-one")
+    (forge.data() / "asked" / "late-one.json").write_text('{"sha": "%s"}' % sha)
+    assert "not approved" in forge.check("late-one")["error"]

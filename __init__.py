@@ -27,7 +27,7 @@ def register(ctx):
          {"name": _NAME, "kinds": {"type": "array", "items": {"type": "string", "enum": list(forge.KINDS)}},
           "purpose": {"type": "string", "description": "One sentence: what the plugin does"}}, ["name", "purpose"],
          lambda a, kw: forge.new(a.get("name"), a.get("kinds"), a.get("purpose", ""))),
-        ("forge_check", "Run the official validator and doctor on a draft plus a permission scan. Repeat until ok.",
+        ("forge_check", "Run the official validator and doctor on a draft plus a permission scan. This imports the draft's Python, so the user is asked to approve each exact draft first. Repeat until ok.",
          {"name": _NAME}, ["name"], lambda a, kw: forge.check(a.get("name"))),
         ("forge_install", "Install a green-checked draft into Hermes DISABLED. You cannot enable it; the user does.",
          {"name": _NAME}, ["name"], lambda a, kw: forge.install(a.get("name"), kw.get("session_id", ""))),

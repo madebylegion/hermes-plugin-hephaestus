@@ -22,7 +22,7 @@ hermes plugins enable hephaestus
 hermes plugins doctor hephaestus
 ```
 
-Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. Tested on v0.22.5 and v0.23.0; needs v0.22.5 or newer.
+Use the full repository URL. A bare local path is read as a GitHub name and fails; to test a local clone, use `file:///abs/path/to/clone`. Tested on v0.23.1; needs v0.23.1 or newer (each check uses its plugin approval gate).
 
 **First run, once:** open Capabilities → Plugins and switch on Hephaestus's own Desktop part (press Rescan if it is not listed). Until then you get a plain text card.
 
@@ -47,6 +47,7 @@ A skill cannot enforce anything. Hephaestus is code, so it can gate the install 
 
 ## Safety model
 
+- **You approve each check.** `forge_check` runs the draft's Python on this machine (see Limits), so Hermes asks you first, for that exact draft (keyed by its `tree_sha`). If the draft changes, it asks again. Denied, timed out, or no one there to answer (cron, unattended runs): the check does not run.
 - **Installed disabled.** No forged tool, hook or command is live until you enable it. Only a human enables, and enable always passes `--no-allow-tool-override`.
 - **Hard gate.** `forge_check` fails on any failed validator or doctor check, on symlinks, and on private Hermes imports (the official validator only warns on those). A `dangerous` security scan also stops the install.
 - **Rollback.** One previous version is kept. Rollback restores it and checks the hash.
@@ -62,7 +63,7 @@ The guard **stops a confused agent, not a hostile one.** It is a pattern check.
 - It misses a plugin the agent writes by hand outside Hephaestus.
 - A dynamic import such as `importlib.import_module('hermes_' + …)` gets past the private-import check.
 - The permission label comes from a heuristic code scan. It is for consent, not a sandbox, and can miss code that hides what it does.
-- Checking a draft runs a little of its code. The official validator imports the draft once in a throwaway child process (scratch Hermes home, same user and environment) to see what it registers. Top-level and `register()` code runs then; the agent's own terminal can already do as much.
+- **`forge_check` executes the draft's Python on this machine.** The official validator and doctor import the draft and call its `register()`, outside any sandbox, as your user. That is why each check needs your approval. The `hermes` child gets only a short list of environment variables (no provider keys), but the CLI still loads `HERMES_HOME/.env` itself. If you turned approvals off (`approvals.mode: off` or YOLO), Hermes does not ask.
 - Tested on Linux only.
 
 ## Surfaces
@@ -79,7 +80,7 @@ Needs `pytest`; takes 4–5 minutes. The tests call the real `hermes` CLI in a t
 
 ## Disclosure
 
-- Starts the `hermes` CLI (validate, doctor, enable, disable, remove). The child process does not inherit `HERMES_YOLO_MODE`, `HERMES_NONINTERACTIVE` or `HERMES_INTERACTIVE`.
+- Starts the `hermes` CLI (validate, doctor, enable, disable, remove). The child gets an explicit environment (`PATH`, `HOME`, `LANG`, `TMPDIR`, locale, XDG, proxy and certificate variables, plus `HERMES_HOME`), never the full parent environment.
 - Writes forged plugins to `$HERMES_HOME/plugins/` and drafts, snapshots and check records to its own data directory.
 - No network. No telemetry. No LLM calls. Python standard library only.
 
